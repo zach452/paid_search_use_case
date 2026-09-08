@@ -1,6 +1,7 @@
 "use client";
 
-import { AppData, DecisionCase } from "@/lib/types";
+import { useEffect, useState } from "react";
+import { AppData, CampaignState, DecisionCase } from "@/lib/types";
 import { runEngine } from "@/lib/engine";
 import RoasChart from "./RoasChart";
 import ZoneGauge from "./ZoneGauge";
@@ -109,13 +110,25 @@ interface Props {
   data: AppData;
   activeScenarioId: string | null;
   onSelectScenario: (id: string) => void;
+  onApplyDecision: (patch: Partial<CampaignState>) => void;
 }
 
-export default function DecisionPanel({ data, activeScenarioId, onSelectScenario }: Props) {
+export default function DecisionPanel({ data, activeScenarioId, onSelectScenario, onApplyDecision }: Props) {
   const r = runEngine(data);
   const tone = CASE_TONE[r.decisionCase];
   const styles = TONE_STYLES[tone];
   const Icon = CASE_ICON[r.decisionCase];
+  const [justApplied, setJustApplied] = useState(false);
+
+  useEffect(() => {
+    setJustApplied(false);
+  }, [r.decisionCase, r.value]);
+
+  function handleApply() {
+    if (!r.appliedState) return;
+    onApplyDecision(r.appliedState);
+    setJustApplied(true);
+  }
 
   return (
     <div className="space-y-6">
@@ -149,6 +162,33 @@ export default function DecisionPanel({ data, activeScenarioId, onSelectScenario
           <InfoChip icon={IconCalendarClock} label="Review cadence" value={r.reviewCadence} />
           <InfoChip icon={IconHourglass} label="Wait period" value={r.waitPeriod} />
         </div>
+
+        {r.appliedState && (
+          <div className="mt-4 flex items-center gap-3 border-t border-[var(--border)]/60 pt-4">
+            <button
+              onClick={handleApply}
+              disabled={justApplied}
+              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold shadow-sm transition-all ${
+                justApplied
+                  ? "cursor-default bg-[var(--status-good)]/15 text-[var(--status-good)]"
+                  : "bg-[var(--text-primary)] text-[var(--surface-1)] hover:opacity-90 active:scale-[0.98]"
+              }`}
+            >
+              {justApplied ? (
+                <>
+                  <IconCheckCircle className="h-4 w-4" /> Applied
+                </>
+              ) : (
+                "Apply this recommendation"
+              )}
+            </button>
+            <span className="text-xs text-[var(--text-muted)]">
+              {justApplied
+                ? "Campaign State on the Inputs tab has been updated — wait-period gating starts now."
+                : "Writes this exact change to Campaign State (status, target, budget, last-change date/type) so the wait-period gate engages automatically."}
+            </span>
+          </div>
+        )}
       </div>
 
       <div>
@@ -171,6 +211,7 @@ export default function DecisionPanel({ data, activeScenarioId, onSelectScenario
         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-1)] p-4">
           <RoasChart
             dailyData={data.dailyData}
+            weeklyData={data.weeklyData}
             today={data.state.today}
             targetRoas={data.constants.requiredTargetRoas}
             breakevenRoas={data.constants.matureBreakeven}

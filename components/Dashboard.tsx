@@ -8,6 +8,7 @@ import { loadStoredData, saveStoredData, exportDataAsFile, parseImportedFile } f
 import { todayISO } from "@/lib/dateUtils";
 import DecisionPanel from "./DecisionPanel";
 import DailyDataTable from "./DailyDataTable";
+import WeeklyDataTable from "./WeeklyDataTable";
 import InputsPanel from "./InputsPanel";
 import LagTable from "./LagTable";
 import { IconAlertTriangle, IconCheckCircle, IconDollar, IconHourglass, IconMoon, IconPause, IconPlay, IconSnowflake, IconSun, IconTrendingDown, IconTrendingUp } from "./icons";
@@ -125,6 +126,11 @@ export default function Dashboard() {
     });
   }
 
+  function handleApplyDecision(patch: Partial<AppData["state"]>) {
+    setScenarioId(null);
+    setData((prev) => (prev ? { ...prev, state: { ...prev.state, ...patch } } : prev));
+  }
+
   return (
     <div className="min-h-screen">
       <div className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--surface-1)]/85 backdrop-blur-md">
@@ -207,17 +213,34 @@ export default function Dashboard() {
 
         <div key={tab} className="animate-fade-in">
           {tab === "decision" && (
-            <DecisionPanel data={data} activeScenarioId={scenarioId} onSelectScenario={handleSelectScenario} />
+            <DecisionPanel
+              data={data}
+              activeScenarioId={scenarioId}
+              onSelectScenario={handleSelectScenario}
+              onApplyDecision={handleApplyDecision}
+            />
           )}
           {tab === "data" && (
-            <DailyDataTable
-              dailyData={data.dailyData}
-              today={data.state.today}
-              onChange={(dailyData) => {
-                setScenarioId(null);
-                setData({ ...data, dailyData });
-              }}
-            />
+            <div className="space-y-8">
+              <DailyDataTable
+                dailyData={data.dailyData}
+                today={data.state.today}
+                onChange={(dailyData) => {
+                  setScenarioId(null);
+                  setData({ ...data, dailyData });
+                }}
+              />
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">Older History (Weekly)</h3>
+                <WeeklyDataTable
+                  weeklyData={data.weeklyData}
+                  onChange={(weeklyData) => {
+                    setScenarioId(null);
+                    setData({ ...data, weeklyData });
+                  }}
+                />
+              </div>
+            </div>
           )}
           {tab === "inputs" && (
             <InputsPanel

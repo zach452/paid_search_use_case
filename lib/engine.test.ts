@@ -160,3 +160,74 @@ test("safety gate overrides an active wait period", () => {
   const r = runEngine(data);
   assert.equal(r.decisionCase, "SAFETY_PAUSE");
 });
+
+test("appliedState is null for no-op cases", () => {
+  const data = buildSampleData(TODAY);
+  const r = runEngine(data);
+  assert.equal(r.decisionCase, "NORMAL");
+  assert.equal(r.appliedState, null);
+});
+
+test("appliedState for TIGHTEN matches the displayed VALUE, and applying it self-throttles", () => {
+  const data = buildSampleData(TODAY);
+  data.dailyData = trueRoasRows(2.05, TODAY);
+  const r = runEngine(data);
+  assert.equal(r.decisionCase, "TIGHTEN");
+  assert.ok(r.appliedState);
+  assert.equal(r.appliedState!.currentTargetRoas, 2.3);
+  assert.equal(r.appliedState!.lastChangeType, "Target ROAS Change");
+  assert.equal(r.appliedState!.lastChangeDate, TODAY);
+
+  // Applying it and re-running same day should immediately gate further changes.
+  const applied: AppData = { ...data, state: { ...data.state, ...r.appliedState } };
+  const r2 = runEngine(applied);
+  assert.equal(r2.decisionCase, "WAIT_HOLD");
+});
+
+test("appliedState for PAUSED_REENABLE sets Active status, new target, and half budget", () => {
+  const data = buildSampleData(TODAY);
+  data.state.status = "Paused";
+  data.state.lastChangeDate = addDays(TODAY, -5);
+  data.state.lastChangeType = "Pause";
+  data.state.currentTargetRoas = 2.2;
+  data.state.currentBudget = 8000;
+  const r = runEngine(data);
+  assert.equal(r.decisionCase, "PAUSED_REENABLE");
+  assert.deepEqual(r.appliedState, {
+    status: "Active",
+    currentTargetRoas: 2.3,
+    currentBudget: 4000,
+    lastChangeDate: TODAY,
+    lastChangeType: "Re-enable",
+  });
+});
+
+test("appliedState for SEASON_START captures the pre-season target as the reversion baseline", () => {
+  const data = buildSampleData(TODAY);
+  data.state.currentTargetRoas = 2.2;
+  data.state.seasonality = {
+    active: "Y",
+    direction: "Up",
+    startDate: TODAY,
+    durationDays: 10,
+    adjustmentSize: 0.15,
+    baselineTargetRoas: 0, // deliberately wrong/stale — apply must recompute it, not trust this
+  };
+  const r = runEngine(data);
+  assert.equal(r.decisionCase, "SEASON_START");
+  assert.equal(r.appliedState!.currentTargetRoas, 2.05);
+  assert.equal(r.appliedState!.seasonality!.baselineTargetRoas, 2.2);
+
+  const applied: AppData = {
+    ...data,
+    state: {
+      ...data.state,
+      ...r.appliedState,
+      seasonality: { ...data.state.seasonality, ...r.appliedState!.seasonality },
+    },
+  };
+  const seasonEnd = { ...applied, state: { ...applied.state, today: addDays(TODAY, 9) } };
+  const rEnd = runEngine(seasonEnd);
+  assert.equal(rEnd.decisionCase, "SEASON_END");
+  assert.equal(rEnd.appliedState!.currentTargetRoas, 2.2); // reverts to the captured baseline, not the mid-season value
+});

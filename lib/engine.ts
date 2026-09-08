@@ -1,4 +1,4 @@
-import { AppData, DailyRow, DecisionCase, EngineResult, WindowStats } from "./types";
+import { AppData, CampaignState, DailyRow, DecisionCase, EngineResult, WindowStats } from "./types";
 import { addDays, daysBetween, parseISO } from "./dateUtils";
 
 /** Conversion-lag curve from the case study: share of a spend-day's eventual
@@ -127,19 +127,55 @@ export function runEngine(data: AppData): EngineResult {
     decisionCase = "LOOSEN";
   }
 
-  const newTighten = Math.min(state.currentTargetRoas + c.stepSize, c.ceilingTargetRoas);
-  const newLoosen = Math.max(state.currentTargetRoas - c.stepSize, c.floorTargetRoas);
-  const newBudget = state.currentBudget * (1 + c.budgetStepSize);
-  const reenableTarget = state.currentTargetRoas + c.stepSize;
-  const reenableBudget = state.currentBudget * 0.5;
-  const seasonStartTarget =
+  // Rounded to basis points (4 decimal places on the fraction) so repeated apply
+  // cycles can't accumulate binary floating-point drift (e.g. 2.2 + 0.1 !== 2.3000000000000003).
+  const roundRoas = (v: number) => Math.round(v * 10000) / 10000;
+  const roundUsd = (v: number) => Math.round(v);
+
+  const newTighten = roundRoas(Math.min(state.currentTargetRoas + c.stepSize, c.ceilingTargetRoas));
+  const newLoosen = roundRoas(Math.max(state.currentTargetRoas - c.stepSize, c.floorTargetRoas));
+  const newBudget = roundUsd(state.currentBudget * (1 + c.budgetStepSize));
+  const reenableTarget = roundRoas(state.currentTargetRoas + c.stepSize);
+  const reenableBudget = roundUsd(state.currentBudget * 0.5);
+  const seasonStartTarget = roundRoas(
     state.seasonality.direction === "Up"
       ? state.currentTargetRoas - state.seasonality.adjustmentSize
-      : state.currentTargetRoas + state.seasonality.adjustmentSize;
+      : state.currentTargetRoas + state.seasonality.adjustmentSize
+  );
 
   const waitDaysLeft = Math.max(0, c.waitDays - daysSinceChange);
   const waitOrdersLeft = Math.max(0, c.waitOrders - ordersSinceChange);
   const insuffNeeded = Math.max(0, c.minOrders - ordersUsed);
+
+  // The exact state mutation "Apply this recommendation" performs, keyed off the same
+  // numbers as VALUE above — no-op cases (NORMAL, *_HOLD, DATA_INSUFFICIENT, SEASON_MID)
+  // are intentionally absent so the UI knows not to offer an Apply button for them.
+  const APPLIED_STATE: Partial<Record<DecisionCase, Partial<CampaignState>>> = {
+    SAFETY_PAUSE: { status: "Paused", lastChangeDate: today, lastChangeType: "Pause" },
+    SEVERE_PAUSE: { status: "Paused", lastChangeDate: today, lastChangeType: "Pause" },
+    PAUSED_REENABLE: {
+      status: "Active",
+      currentTargetRoas: reenableTarget,
+      currentBudget: reenableBudget,
+      lastChangeDate: today,
+      lastChangeType: "Re-enable",
+    },
+    SEASON_START: {
+      currentTargetRoas: seasonStartTarget,
+      lastChangeDate: today,
+      lastChangeType: "Seasonality Start",
+      seasonality: { ...state.seasonality, baselineTargetRoas: state.currentTargetRoas },
+    },
+    SEASON_END: {
+      currentTargetRoas: state.seasonality.baselineTargetRoas,
+      lastChangeDate: today,
+      lastChangeType: "Seasonality End",
+      seasonality: { ...state.seasonality, active: "N" },
+    },
+    TIGHTEN: { currentTargetRoas: newTighten, lastChangeDate: today, lastChangeType: "Target ROAS Change" },
+    LOOSEN: { currentTargetRoas: newLoosen, lastChangeDate: today, lastChangeType: "Target ROAS Change" },
+    BUDGET_INCREASE: { currentBudget: newBudget, lastChangeDate: today, lastChangeType: "Budget Change" },
+  };
 
   const ACTION: Record<DecisionCase, string> = {
     SAFETY_PAUSE: "Pause the campaign",
@@ -254,5 +290,6 @@ export function runEngine(data: AppData): EngineResult {
     reason: REASON[decisionCase],
     reviewCadence: CADENCE[decisionCase],
     waitPeriod: WAIT[decisionCase],
+    appliedState: APPLIED_STATE[decisionCase] ?? null,
   };
 }

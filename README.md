@@ -21,16 +21,28 @@ Same logic as the spreadsheet, ported to TypeScript (`lib/engine.ts`) and wrappe
 in a small dashboard (`components/Dashboard.tsx`) with four tabs:
 
 - **Decision** — the live recommendation (ACTION/VALUE/REASON/REVIEW CADENCE/WAIT
-  PERIOD) as an icon-coded hero card, a zone gauge showing exactly where the
-  current adjusted ROAS sits between breakeven/normal/opportunity, and a chart
-  of raw vs. age-adjusted ROAS with the critical/normal zones shaded directly
-  on the plot.
-- **Daily Data** — an editable table (add/edit/delete rows, or paste multiple
-  rows at once from a spreadsheet export).
+  PERIOD) as an icon-coded hero card, an **"Apply this recommendation" button**,
+  a zone gauge showing exactly where the current adjusted ROAS sits between
+  breakeven/normal/opportunity, and a chart of raw vs. age-adjusted ROAS —
+  spanning the full ~60-day picture (older weekly history plus daily detail),
+  with the critical/normal zones shaded directly on the plot.
+- **Daily Data** — an editable table for the last ~21 days (add/edit/delete
+  rows, or paste multiple rows at once), plus an **Older History (Weekly)**
+  table below it for the ~40 days before that, matching what the case says
+  you'll actually receive (weekly further back, daily for the recent period).
 - **Inputs** — the campaign state (Target ROAS and budget as live sliders),
   seasonality override, and system constants, grouped the same way as the
   workbook's `Inputs` tab.
 - **Lag Table** — the conversion-lag reference curve.
+
+**Apply this recommendation** writes the engine's exact output — the same
+numbers shown in VALUE — back into Campaign State (status, Target ROAS,
+budget, last-change date/type) with one click, instead of relying on a human
+to remember to update Inputs by hand afterward. It's built from
+`EngineResult.appliedState`, computed in `lib/engine.ts` from the identical
+expressions that produce VALUE, so the two can't drift apart; unit tests
+(`lib/engine.test.ts`) confirm applying a recommendation immediately engages
+the wait-period gate on the next render.
 
 A **scenario switcher** at the top of the Decision tab swaps in one of 8
 hand-built, engine-verified mock datasets — softening performance, healthy,
@@ -44,8 +56,7 @@ Everything recalculates instantly on every edit — there's no "run" button.
 Data lives in the browser (`localStorage`) — nothing is sent to a server —
 with Export/Import JSON buttons to back up or hand a snapshot to a teammate.
 It ships pre-loaded with mock data so it's usable immediately; replace it
-with real data via the
-Daily Data tab.
+with real data via the Daily Data tab (and Older History (Weekly) below it).
 
 The engine has its own test suite (`lib/engine.test.ts`) covering all 13
 decision branches — the same scenarios validated against the Excel workbook

@@ -1,11 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { DailyRow } from "@/lib/types";
+import { DailyRow, WeeklyRow } from "@/lib/types";
 import { ageOf, pctObserved } from "@/lib/engine";
+import { addDays, daysBetween } from "@/lib/dateUtils";
 
 interface Props {
   dailyData: DailyRow[];
+  weeklyData?: WeeklyRow[];
   today: string;
   targetRoas: number;
   breakevenRoas: number;
@@ -34,10 +36,12 @@ function smoothPath(points: { x: number; y: number }[]): string {
   return d;
 }
 
-export default function RoasChart({ dailyData, today, targetRoas, breakevenRoas, bandLower, bandUpper }: Props) {
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+type Hover = { kind: "daily"; idx: number } | { kind: "weekly"; idx: number } | null;
 
-  const rows = useMemo(() => {
+export default function RoasChart({ dailyData, weeklyData = [], today, targetRoas, breakevenRoas, bandLower, bandUpper }: Props) {
+  const [hover, setHover] = useState<Hover>(null);
+
+  const dailyRows = useMemo(() => {
     return [...dailyData]
       .filter((d) => ageOf(d.date, today) >= 0)
       .sort((a, b) => (a.date < b.date ? -1 : 1))
@@ -49,7 +53,13 @@ export default function RoasChart({ dailyData, today, targetRoas, breakevenRoas,
       });
   }, [dailyData, today]);
 
-  if (rows.length < 2) {
+  const weeklyRows = useMemo(() => {
+    return [...weeklyData]
+      .sort((a, b) => (a.weekStarting < b.weekStarting ? -1 : 1))
+      .map((w) => ({ ...w, date: addDays(w.weekStarting, 3), roas: w.spend > 0 ? w.revenue / w.spend : 0 }));
+  }, [weeklyData]);
+
+  if (dailyRows.length < 2) {
     return (
       <div className="flex h-[260px] items-center justify-center rounded-lg border border-dashed border-[var(--border)] text-sm text-[var(--text-muted)]">
         Add at least 2 days of Daily Data to see the chart.
@@ -57,25 +67,46 @@ export default function RoasChart({ dailyData, today, targetRoas, breakevenRoas,
     );
   }
 
-  const allValues = rows.flatMap((r) => [r.rawRoas, r.adjRoas]).concat([bandUpper, breakevenRoas]);
+  const startDate = weeklyRows.length > 0 ? weeklyRows[0].date : dailyRows[0].date;
+  const endDate = dailyRows[dailyRows.length - 1].date;
+  const totalDays = Math.max(1, daysBetween(startDate, endDate));
+
+  const allValues = dailyRows
+    .flatMap((r) => [r.rawRoas, r.adjRoas])
+    .concat(weeklyRows.map((w) => w.roas))
+    .concat([bandUpper, breakevenRoas]);
   const yMax = Math.max(...allValues) * 1.1;
   const yMin = Math.max(0, Math.min(...allValues) * 0.85);
 
   const innerW = WIDTH - PAD.left - PAD.right;
   const innerH = HEIGHT - PAD.top - PAD.bottom;
 
-  const x = (i: number) => PAD.left + (innerW * i) / (rows.length - 1);
+  const x = (date: string) => PAD.left + (innerW * daysBetween(startDate, date)) / totalDays;
   const y = (v: number) => PAD.top + innerH - (innerH * (v - yMin)) / (yMax - yMin);
   const clampedY = (v: number) => Math.max(PAD.top, Math.min(PAD.top + innerH, y(v)));
 
-  const rawPoints = rows.map((r, i) => ({ x: x(i), y: y(r.rawRoas) }));
-  const adjPoints = rows.map((r, i) => ({ x: x(i), y: y(r.adjRoas) }));
+  const rawPoints = dailyRows.map((r) => ({ x: x(r.date), y: y(r.rawRoas) }));
+  const adjPoints = dailyRows.map((r) => ({ x: x(r.date), y: y(r.adjRoas) }));
+  // Connect the weekly (matured) line into the first daily point so there's no visual gap
+  // at the daily/weekly seam.
+  const weeklyPoints = weeklyRows.map((w) => ({ x: x(w.date), y: y(w.roas) }));
+  const weeklyPathPoints = weeklyPoints.length > 0 ? [...weeklyPoints, adjPoints[0]] : [];
 
   const yTicks = 5;
   const tickValues = Array.from({ length: yTicks + 1 }, (_, i) => yMin + ((yMax - yMin) * i) / yTicks);
 
-  const dateLabelEvery = Math.ceil(rows.length / 6);
-  const hovered = hoverIdx !== null ? rows[hoverIdx] : null;
+  const totalPoints = weeklyRows.length + dailyRows.length;
+  // Evenly spaced by actual elapsed time, not by array index — the weekly and daily
+  // segments have very different point densities, so index-based striding produced
+  // visually uneven label spacing.
+  const numLabels = 6;
+  const labelPoints = Array.from({ length: numLabels + 1 }, (_, i) => {
+    const date = addDays(startDate, Math.round((totalDays * i) / numLabels));
+    return { date, key: `t${i}` };
+  });
+
+  const hoveredDaily = hover?.kind === "daily" ? dailyRows[hover.idx] : null;
+  const hoveredWeekly = hover?.kind === "weekly" ? weeklyRows[hover.idx] : null;
 
   return (
     <div className="viz-root relative">
@@ -112,6 +143,18 @@ export default function RoasChart({ dailyData, today, targetRoas, breakevenRoas,
           </g>
         ))}
 
+        {weeklyRows.length > 0 && (
+          <line
+            x1={x(dailyRows[0].date)}
+            x2={x(dailyRows[0].date)}
+            y1={PAD.top}
+            y2={PAD.top + innerH}
+            stroke="var(--border)"
+            strokeWidth={1}
+            strokeDasharray="2 2"
+          />
+        )}
+
         <line x1={PAD.left} x2={WIDTH - PAD.right} y1={y(breakevenRoas)} y2={y(breakevenRoas)} stroke="var(--status-critical)" strokeWidth={1.25} strokeDasharray="4 3" opacity={0.8} />
         <text x={WIDTH - PAD.right} y={y(breakevenRoas) - 4} textAnchor="end" fontSize={10} fill="var(--status-critical)">
           Breakeven {Math.round(breakevenRoas * 100)}%
@@ -122,34 +165,62 @@ export default function RoasChart({ dailyData, today, targetRoas, breakevenRoas,
           Target {Math.round(targetRoas * 100)}%
         </text>
 
+        {weeklyPathPoints.length > 0 && (
+          <path
+            d={smoothPath(weeklyPathPoints)}
+            fill="none"
+            stroke="var(--series-1)"
+            strokeWidth={2.5}
+            strokeLinecap="round"
+            strokeDasharray="6 4"
+            opacity={0.4}
+          />
+        )}
         <path d={smoothPath(rawPoints)} fill="none" stroke="var(--series-2)" strokeWidth={2} strokeLinecap="round" opacity={0.85} />
         <path d={smoothPath(adjPoints)} fill="none" stroke="var(--series-1)" strokeWidth={2.75} strokeLinecap="round" />
 
-        {rows.map((r, i) =>
-          i % dateLabelEvery === 0 ? (
-            <text key={r.date} x={x(i)} y={HEIGHT - 8} textAnchor="middle" fontSize={9} fill="var(--text-muted)">
-              {r.date.slice(5)}
-            </text>
-          ) : null
-        )}
+        {labelPoints.map((p) => (
+          <text key={p.key} x={x(p.date)} y={HEIGHT - 8} textAnchor="middle" fontSize={9} fill="var(--text-muted)">
+            {p.date.slice(5)}
+          </text>
+        ))}
 
-        {rows.map((r, i) => (
+        {weeklyRows.map((w, i) => (
           <rect
-            key={r.date}
-            x={x(i) - innerW / rows.length / 2}
+            key={`hw${i}`}
+            x={x(w.date) - innerW / totalPoints / 2}
             y={PAD.top}
-            width={innerW / rows.length}
+            width={innerW / totalPoints}
             height={innerH}
             fill="transparent"
-            onMouseEnter={() => setHoverIdx(i)}
-            onMouseLeave={() => setHoverIdx(null)}
+            onMouseEnter={() => setHover({ kind: "weekly", idx: i })}
+            onMouseLeave={() => setHover(null)}
           />
         ))}
-        {hovered && (
+        {dailyRows.map((r, i) => (
+          <rect
+            key={`hd${i}`}
+            x={x(r.date) - innerW / totalPoints / 2}
+            y={PAD.top}
+            width={innerW / totalPoints}
+            height={innerH}
+            fill="transparent"
+            onMouseEnter={() => setHover({ kind: "daily", idx: i })}
+            onMouseLeave={() => setHover(null)}
+          />
+        ))}
+
+        {hoveredDaily && (
           <>
-            <line x1={x(hoverIdx!)} x2={x(hoverIdx!)} y1={PAD.top} y2={PAD.top + innerH} stroke="var(--text-muted)" strokeWidth={1} />
-            <circle cx={x(hoverIdx!)} cy={y(hovered.adjRoas)} r={3.5} fill="var(--series-1)" stroke="var(--surface-1)" strokeWidth={1.5} />
-            <circle cx={x(hoverIdx!)} cy={y(hovered.rawRoas)} r={3.5} fill="var(--series-2)" stroke="var(--surface-1)" strokeWidth={1.5} />
+            <line x1={x(hoveredDaily.date)} x2={x(hoveredDaily.date)} y1={PAD.top} y2={PAD.top + innerH} stroke="var(--text-muted)" strokeWidth={1} />
+            <circle cx={x(hoveredDaily.date)} cy={y(hoveredDaily.adjRoas)} r={3.5} fill="var(--series-1)" stroke="var(--surface-1)" strokeWidth={1.5} />
+            <circle cx={x(hoveredDaily.date)} cy={y(hoveredDaily.rawRoas)} r={3.5} fill="var(--series-2)" stroke="var(--surface-1)" strokeWidth={1.5} />
+          </>
+        )}
+        {hoveredWeekly && (
+          <>
+            <line x1={x(hoveredWeekly.date)} x2={x(hoveredWeekly.date)} y1={PAD.top} y2={PAD.top + innerH} stroke="var(--text-muted)" strokeWidth={1} />
+            <circle cx={x(hoveredWeekly.date)} cy={y(hoveredWeekly.roas)} r={3.5} fill="var(--text-muted)" stroke="var(--surface-1)" strokeWidth={1.5} />
           </>
         )}
       </svg>
@@ -163,6 +234,12 @@ export default function RoasChart({ dailyData, today, targetRoas, breakevenRoas,
           <span className="inline-block h-0.5 w-4 rounded-full" style={{ background: "var(--series-2)" }} />
           Reported ROAS (raw)
         </span>
+        {weeklyRows.length > 0 && (
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-0.5 w-4 rounded-full border-t-2 border-dashed" style={{ borderColor: "var(--series-1)", opacity: 0.5 }} />
+            Historical (weekly, matured)
+          </span>
+        )}
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-full" style={{ background: "var(--status-good)", opacity: 0.5 }} />
           Normal band
@@ -173,13 +250,22 @@ export default function RoasChart({ dailyData, today, targetRoas, breakevenRoas,
         </span>
       </div>
 
-      {hovered && (
+      {hoveredDaily && (
         <div className="pointer-events-none absolute right-2 top-2 rounded-lg border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-xs shadow-md animate-fade-in">
-          <div className="font-medium text-[var(--text-primary)]">{hovered.date}</div>
-          <div style={{ color: "var(--series-1)" }}>Adjusted: {(hovered.adjRoas * 100).toFixed(0)}%</div>
-          <div style={{ color: "var(--series-2)" }}>Raw: {(hovered.rawRoas * 100).toFixed(0)}%</div>
+          <div className="font-medium text-[var(--text-primary)]">{hoveredDaily.date}</div>
+          <div style={{ color: "var(--series-1)" }}>Adjusted: {(hoveredDaily.adjRoas * 100).toFixed(0)}%</div>
+          <div style={{ color: "var(--series-2)" }}>Raw: {(hoveredDaily.rawRoas * 100).toFixed(0)}%</div>
           <div className="text-[var(--text-muted)]">
-            Spend ${hovered.spend.toLocaleString()} · Orders {hovered.orders}
+            Spend ${hoveredDaily.spend.toLocaleString()} · Orders {hoveredDaily.orders}
+          </div>
+        </div>
+      )}
+      {hoveredWeekly && (
+        <div className="pointer-events-none absolute right-2 top-2 rounded-lg border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-xs shadow-md animate-fade-in">
+          <div className="font-medium text-[var(--text-primary)]">Week of {hoveredWeekly.weekStarting}</div>
+          <div style={{ color: "var(--text-muted)" }}>ROAS: {(hoveredWeekly.roas * 100).toFixed(0)}% (fully matured)</div>
+          <div className="text-[var(--text-muted)]">
+            Spend ${hoveredWeekly.spend.toLocaleString()} · Revenue ${hoveredWeekly.revenue.toLocaleString()}
           </div>
         </div>
       )}

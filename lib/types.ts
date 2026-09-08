@@ -127,4 +127,8 @@ export interface EngineResult {
   reason: string;
   reviewCadence: string;
   waitPeriod: string;
+  /** The exact state patch "Apply this recommendation" would write — null when the
+   * decision case is a no-op (NORMAL, *_HOLD, DATA_INSUFFICIENT, SEASON_MID). Built from
+   * the same numbers used in `value`, so applying it can never drift from what's displayed. */
+  appliedState: Partial<CampaignState> | null;
 }
