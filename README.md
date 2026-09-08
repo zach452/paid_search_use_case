@@ -10,9 +10,53 @@ for a week.
 
 | File | What it is |
 |---|---|
-| **`Campaign_Control_System.xlsx`** | The working system (Option 1 — Google Sheet / formula). Paste in daily data, get `ACTION` / `VALUE` / `REASON` / `REVIEW CADENCE` / `WAIT PERIOD` back. Every cell is a live formula — no hardcoded results — so you can change any input and stress-test the logic yourself. |
-| **`Campaign_Control_System_Framework.docx`** | The 2-page plain-language explanation of the same logic (Option 3), for anyone who wants the "why" without opening the spreadsheet. |
-| **`tools/`** | The scripts that generate both deliverables from scratch, plus the stress-test harness used to validate every decision branch before delivery (see below). Not required to use the system — kept for transparency and so the workbook can be regenerated or extended. |
+| **The web app** (`app/`, `components/`, `lib/`) | A dynamic, deployable version of the same system (Option 4 — a live web tool). Next.js + TypeScript; the decision engine is a pure, unit-tested function in `lib/engine.ts`. Deploys to Vercel with zero config — see **Deploying to Vercel** below. |
+| **`Campaign_Control_System.xlsx`** | The original working spreadsheet (Option 1 — Google Sheet / formula). Paste in daily data, get `ACTION` / `VALUE` / `REASON` / `REVIEW CADENCE` / `WAIT PERIOD` back. Every cell is a live formula. |
+| **`Campaign_Control_System_Framework.docx`** | The 2-page plain-language explanation of the logic (Option 3), for anyone who wants the "why" without opening the spreadsheet or the code. |
+| **`tools/`** | The scripts that generate the xlsx/docx deliverables from scratch, plus the stress-test harness used to validate every decision branch. Not required to use the system — kept for transparency. |
+
+## The web app
+
+Same logic as the spreadsheet, ported to TypeScript (`lib/engine.ts`) and wrapped
+in a small dashboard (`components/Dashboard.tsx`) with four tabs:
+
+- **Decision** — the live recommendation (ACTION/VALUE/REASON/REVIEW CADENCE/WAIT
+  PERIOD), diagnostics, and a chart of raw vs. age-adjusted ROAS against the
+  target/breakeven lines.
+- **Daily Data** — an editable table (add/edit/delete rows, or paste multiple
+  rows at once from a spreadsheet export).
+- **Inputs** — the campaign state, seasonality override, and system constants,
+  grouped the same way as the workbook's `Inputs` tab.
+- **Lag Table** — the conversion-lag reference curve.
+
+Everything recalculates instantly on every edit — there's no "run" button.
+Data lives in the browser (`localStorage`) — nothing is sent to a server —
+with Export/Import JSON buttons to back up or hand a snapshot to a teammate.
+It ships pre-loaded with the same synthetic 21-day sample data as the
+workbook, so it's usable immediately; replace it with real data via the
+Daily Data tab.
+
+The engine has its own test suite (`lib/engine.test.ts`) covering all 13
+decision branches — the same scenarios validated against the Excel workbook
+in `tools/stress_test.py` — run with `npm test`.
+
+### Running locally
+
+```bash
+npm install
+npm run dev        # http://localhost:3000
+npm test           # engine unit tests
+npm run build      # production build (what Vercel runs)
+```
+
+### Deploying to Vercel
+
+1. Push this repo to GitHub (already done if you're reading this from the repo).
+2. In Vercel: **Add New → Project → Import Git Repository**, select this repo.
+3. Vercel auto-detects Next.js — no configuration, build command, or
+   environment variables are needed. Click **Deploy**.
+
+That's it — every push to the connected branch gets its own deployment.
 
 ## How the system works, in one paragraph
 
