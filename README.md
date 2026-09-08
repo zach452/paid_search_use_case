@@ -21,19 +21,30 @@ Same logic as the spreadsheet, ported to TypeScript (`lib/engine.ts`) and wrappe
 in a small dashboard (`components/Dashboard.tsx`) with four tabs:
 
 - **Decision** — the live recommendation (ACTION/VALUE/REASON/REVIEW CADENCE/WAIT
-  PERIOD), diagnostics, and a chart of raw vs. age-adjusted ROAS against the
-  target/breakeven lines.
+  PERIOD) as an icon-coded hero card, a zone gauge showing exactly where the
+  current adjusted ROAS sits between breakeven/normal/opportunity, and a chart
+  of raw vs. age-adjusted ROAS with the critical/normal zones shaded directly
+  on the plot.
 - **Daily Data** — an editable table (add/edit/delete rows, or paste multiple
   rows at once from a spreadsheet export).
-- **Inputs** — the campaign state, seasonality override, and system constants,
-  grouped the same way as the workbook's `Inputs` tab.
+- **Inputs** — the campaign state (Target ROAS and budget as live sliders),
+  seasonality override, and system constants, grouped the same way as the
+  workbook's `Inputs` tab.
 - **Lag Table** — the conversion-lag reference curve.
+
+A **scenario switcher** at the top of the Decision tab swaps in one of 8
+hand-built, engine-verified mock datasets — softening performance, healthy,
+strong overperformance, budget-capped, confirmed breakeven breach, an acute
+3-day crash, paused/ready-to-re-enable, and a seasonal event starting — so
+the system's full range is one click away instead of requiring manual data
+edits. A persistent status pill in the header shows the current
+recommendation on every tab, and there's a light/dark toggle.
 
 Everything recalculates instantly on every edit — there's no "run" button.
 Data lives in the browser (`localStorage`) — nothing is sent to a server —
 with Export/Import JSON buttons to back up or hand a snapshot to a teammate.
-It ships pre-loaded with the same synthetic 21-day sample data as the
-workbook, so it's usable immediately; replace it with real data via the
+It ships pre-loaded with mock data so it's usable immediately; replace it
+with real data via the
 Daily Data tab.
 
 The engine has its own test suite (`lib/engine.test.ts`) covering all 13
