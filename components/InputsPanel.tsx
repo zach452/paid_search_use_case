@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CampaignState, CampaignStatus, LastChangeType, SeasonDirection, SystemConstants } from "@/lib/types";
+import SliderField from "./SliderField";
 
 interface Props {
   state: CampaignState;
@@ -29,20 +30,24 @@ function Field({
 }
 
 const inputClass =
-  "w-full rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-2 py-1.5 text-sm";
+  "w-full rounded-lg border border-[var(--border)] bg-[var(--surface-1)] px-2.5 py-1.5 text-sm transition-colors focus:border-[var(--series-1)] focus:outline-none focus:ring-2 focus:ring-[var(--series-1)]/20";
 
 function Section({ title, children, defaultOpen = true }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-1)]">
+    <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-1)] shadow-sm">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between px-4 py-3 text-left"
+        className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-[var(--surface-2)]/50"
       >
         <span className="text-sm font-semibold text-[var(--text-primary)]">{title}</span>
-        <span className="text-[var(--text-muted)]">{open ? "−" : "+"}</span>
+        <span
+          className={`text-[var(--text-muted)] transition-transform duration-200 ${open ? "rotate-45" : ""}`}
+        >
+          +
+        </span>
       </button>
-      {open && <div className="grid gap-3 border-t border-[var(--border)] p-4 sm:grid-cols-2">{children}</div>}
+      {open && <div className="grid animate-fade-in gap-4 border-t border-[var(--border)] p-4 sm:grid-cols-2">{children}</div>}
     </div>
   );
 }
@@ -81,22 +86,27 @@ export default function InputsPanel({ state, constants, onStateChange, onConstan
             <option value="Paused">Paused</option>
           </select>
         </Field>
-        <Field label="Current platform Target ROAS (%)" note="What's literally set in Google Ads right now.">
-          <input
-            type="number"
-            className={inputClass}
-            value={pctToInput(state.currentTargetRoas)}
-            onChange={(e) => setState({ currentTargetRoas: inputToPct(e.target.value) })}
+        <div className="sm:col-span-2">
+          <SliderField
+            label="Current platform Target ROAS"
+            value={state.currentTargetRoas}
+            min={Math.min(constants.floorTargetRoas, state.currentTargetRoas) - 0.1}
+            max={Math.max(constants.ceilingTargetRoas, state.currentTargetRoas) + 0.1}
+            onChange={(v) => setState({ currentTargetRoas: v })}
+            note="What's literally set in Google Ads right now."
           />
-        </Field>
-        <Field label="Current daily budget ($)">
-          <input
-            type="number"
-            className={inputClass}
+        </div>
+        <div className="sm:col-span-2">
+          <SliderField
+            label="Current daily budget"
             value={state.currentBudget}
-            onChange={(e) => setState({ currentBudget: Number(e.target.value) || 0 })}
+            min={0}
+            max={Math.max(20000, state.currentBudget * 1.5)}
+            step={50}
+            format={(v) => `$${Math.round(v).toLocaleString()}`}
+            onChange={(v) => setState({ currentBudget: v })}
           />
-        </Field>
+        </div>
         <Field label="Last change date">
           <input
             type="date"
